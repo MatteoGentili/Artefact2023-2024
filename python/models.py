@@ -1,5 +1,6 @@
 import pickle
 from abc import abstractmethod
+from gurobipy import *
 
 import numpy as np
 
@@ -182,13 +183,16 @@ class TwoClustersMIP(BaseModel):
             Number of clusters to implement in the MIP.
         """
         self.seed = 123
+        self.L = n_pieces
+        self.K = n_clusters
+        self.epsilon = 0.01
         self.model = self.instantiate()
 
-    def instantiate(self):
-        """Instantiation of the MIP Variables - To be completed."""
-        # To be completed
-        return
-
+    def instantiate(self, n_pieces, n_clusters): 
+        
+        model = Model("MIP_first_model")
+        return model
+ 
     def fit(self, X, Y):
         """Estimation of the parameters - To be completed.
 
@@ -199,8 +203,85 @@ class TwoClustersMIP(BaseModel):
         Y: np.ndarray
             (n_samples, n_features) features of unchosen elements
         """
-
         # To be completed
+        self.n = X.shape[1] # Number of features/criteria
+        self.P = X.shape[0] # Number of elements
+        max = np.ones(self.n)
+        min = np.zeros(self.n)
+
+
+        def LastIndex(x, i):
+            return np.floor(self.L * (x - min[i]) / (max[i] - min[i]))
+        
+        # Reference to the UTA University exercice 
+        def BreakPoints(i, l):
+                    return min[i] + l * (max[i] - min[i]) / self.L
+        
+        # Varariables of the model
+        self.U = {
+            (cluster, criteria, linearSegmentUTA): self.model.addVar(
+                vtype=GRB.CONTINUOUS, lb=0, name="u_{}_{}_{}".format(cluster, criteria, linearSegmentUTA), ub=1)
+                for cluster in range(self.K)
+                for criteria in range(self.n)
+                for  linearSegmentUTA in range(self.L+1) # Need to add +1 because of the last segment {Uk and UK+1}
+        }
+
+        # Overestimation and underestimation variables
+        self.sigmaxPLUS = {(jX): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaxp_{}".format(jX), ub=1) for jX in range(self.P)}
+        self.sigmayPLUS = {(jY): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmayp_{}".format(jY), ub=1) for jY in range(self.P)}
+        self.sigmaxMINUS = {(jX): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaxm_{}".format(jX), ub=1) for jX in range(self.P)}
+        self.sigmayMINUS = {(jY): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaym_{}".format(jY), ub=1) for jY in range(self.P)}
+
+        # Delta allow us to which cluster the element belongs to
+        self.delta1 = {(k, j): self.model.addVar(vtype=GRB.BINARY, name="delta1_{}_{}".format(k, j))for k in range(self.K)for j in range(self.P)}
+
+
+        # Constraints
+        ## Constraint 1: Preferences with delta variable : 
+        M = 2.5 # Big M
+        uiKxiJ = {} # uik_xij[k, i, j] = U_k(i, X[j, i])
+        for k in range(self.K):
+            for i in range(self.n):
+                for j in range(self.P):
+                    l = LastIndex(X[j, i], i)
+                    # print("x", X[j, i], "l", l)
+                    bp = BreakPoints(i, l)
+                    bp1 = BreakPoints(i, l+1)
+                    uiKxiJ[k, i, j] = self.U[(k, i, l)] + ((X[j, i] - bp) / (bp1 - bp)) * (self.U[(k, i, l+1)] - self.U[(k, i, l)])
+        
+        uiKyiJ = {}
+        for k in range(self.K):
+            for i in range(self.n):
+                for j in range(self.P):
+                    l = LastIndex(Y[j, i], i)
+                    # print("x", X[j, i], "l", l)
+                    bp = BreakPoints(i, l)
+                    bp1 = BreakPoints(i, l+1)
+                    uiKyiJ[k, i, j] = self.U[(k, i, l)] + ((Y[j, i] - bp) / (bp1 - bp)) * (self.U[(k, i, l+1)] - self.U[(k, i, l)])
+
+        ## Constraint 2: The decision function for cluster k is uk(x)
+        uk_xj = {}
+        for k in range(self.K):
+            for j in range(self.P):
+                uk_xj[k, j] = quicksum(uiKxiJ[k, i, j] for i in range(self.n))
+        
+        uk_yj = {}
+        for k in range(self.K):
+            for j in range(self.P):
+                uk_yj[k, j] = quicksum(uiKyiJ[k, i, j] for i in range(self.n))
+
+
+        self.model.addConstrs(
+            (uk_xj[k, j] - self.sigmaxPLUS[j] + self.sigmayPLUS[j] - uk_yj[k, j] + self.sigmayPLUS[j] - self.sigmayMINUS[j] - self.epsilon >= -M*(1-self.delta1[(k,j)]) for j in range(self.P) for k in range(self.K))
+        )
+        # uk(x) > uk(y) + ϵ ⇐⇒ x ≽k y ==> x is preferred to y in cluster k
+        # => uk(x) - uk(y) + ϵ >= 0
+        self.model.addConstrs((self.U[(k, i, l+1)] - self.U[(k, i, l)]>=self.epsilon for k in range(self.K) for i in range(self.n) for l in range(self.L)))
+
+
+        # Objective
+        self.model.setObjective(quicksum(self.sigmaxp[j] + self.sigmaxm[j] + self.sigmayp[j] + self.sigmaym[j] for j in range(self.P)), GRB.MINIMIZE)
+
         return
 
     def predict_utility(self, X):
@@ -216,9 +297,11 @@ class TwoClustersMIP(BaseModel):
         np.ndarray:
             (n_samples, n_clusters) array of decision function value for each cluster.
         """
-        # To be completed
-        # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
-        return
+        result = []
+        for x in X:
+            result.append([self.U_k(0,x,self.U_sol), self.U_k(1,x,self.U_sol)])
+        return np.array(result)
+
 
 
 class HeuristicModel(BaseModel):
