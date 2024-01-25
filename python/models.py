@@ -244,7 +244,6 @@ class TwoClustersMIP(BaseModel):
             for i in range(self.n):
                 for j in range(self.P):
                     l = LastIndex(X[j, i], i)
-                    # print("x", X[j, i], "l", l)
                     bp = BreakPoints(i, l)
                     bp1 = BreakPoints(i, l+1)
                     uiKxiJ[k, i, j] = self.U[(k, i, l)] + ((X[j, i] - bp) / (bp1 - bp)) * (self.U[(k, i, l+1)] - self.U[(k, i, l)])
@@ -254,12 +253,11 @@ class TwoClustersMIP(BaseModel):
             for i in range(self.n):
                 for j in range(self.P):
                     l = LastIndex(Y[j, i], i)
-                    # print("x", X[j, i], "l", l)
                     bp = BreakPoints(i, l)
                     bp1 = BreakPoints(i, l+1)
                     uiKyiJ[k, i, j] = self.U[(k, i, l)] + ((Y[j, i] - bp) / (bp1 - bp)) * (self.U[(k, i, l+1)] - self.U[(k, i, l)])
 
-        ## Constraint 2: The decision function for cluster k is uk(x)
+        ## Constraint 2: 
         uk_xj = {}
         for k in range(self.K):
             for j in range(self.P):
@@ -270,17 +268,22 @@ class TwoClustersMIP(BaseModel):
             for j in range(self.P):
                 uk_yj[k, j] = quicksum(uiKyiJ[k, i, j] for i in range(self.n))
 
-
+        ## Constraint 3:
         self.model.addConstrs(
-            (uk_xj[k, j] - self.sigmaxPLUS[j] + self.sigmayPLUS[j] - uk_yj[k, j] + self.sigmayPLUS[j] - self.sigmayMINUS[j] - self.epsilon >= -M*(1-self.delta1[(k,j)]) for j in range(self.P) for k in range(self.K))
+            (uk_xj[k, j] - self.sigmaxPLUS[j] + self.sigmaxMINUS[j] - uk_yj[k, j] + self.sigmayPLUS[j] - self.sigmayMINUS[j] - self.epsilon <= M*self.delta1[(k,j)] - self.epsilon for j in range(self.P) for k in range(self.K))
         )
+
+        ## Constraint 4:
         # uk(x) > uk(y) + ϵ ⇐⇒ x ≽k y ==> x is preferred to y in cluster k
         # => uk(x) - uk(y) + ϵ >= 0
         self.model.addConstrs((self.U[(k, i, l+1)] - self.U[(k, i, l)]>=self.epsilon for k in range(self.K) for i in range(self.n) for l in range(self.L)))
 
+        ## Constraint 5:
+        ### MONOTONICITY:
+        self.model.addConstrs((self.U[(k, i, l+1)] - self.U[(k, i, l)]>=self.epsilon for k in range(self.K) for i in range(self.n) for l in range(self.L)))
 
         # Objective
-        self.model.setObjective(quicksum(self.sigmaxp[j] + self.sigmaxm[j] + self.sigmayp[j] + self.sigmaym[j] for j in range(self.P)), GRB.MINIMIZE)
+        self.model.setObjective(quicksum(self.sigmaxPLUS[j] + self.sigmaxMINUS[j] + self.sigmayPLUS[j] + self.sigmayMINUS[j] for j in range(self.P)), GRB.MINIMIZE)
 
         return
 
@@ -297,10 +300,8 @@ class TwoClustersMIP(BaseModel):
         np.ndarray:
             (n_samples, n_clusters) array of decision function value for each cluster.
         """
-        result = []
-        for x in X:
-            result.append([self.U_k(0,x,self.U_sol), self.U_k(1,x,self.U_sol)])
-        return np.array(result)
+        # To be completed
+        return
 
 
 
