@@ -185,7 +185,7 @@ class TwoClustersMIP(BaseModel):
         self.seed = 123
         self.L = n_pieces
         self.K = n_clusters
-        self.epsilon = 0.0001
+        self.epsilon = 0.001
         self.model = self.instantiate()
 
     def instantiate(self): 
@@ -302,67 +302,61 @@ class TwoClustersMIP(BaseModel):
         # Objective
         self.model.setObjective(quicksum(self.sigmaxPLUS[j] + self.sigmaxMINUS[j] + self.sigmayPLUS[j] + self.sigmayMINUS[j] for j in range(self.P)), GRB.MINIMIZE)
 
+        # def plot_utilitary_fns(U):
+        #     import matplotlib.pyplot as plt
+        #     for k in range(self.K):
+        #         for i in range(self.n):
+        #             plt.plot([BreakPoints(i, l) for l in range(self.L+1)], [U[k, i, l] for l in range(self.L+1)])
+        #         plt.legend(["feature {}".format(i) for i in range(self.n)])
+        #         plt.show()
+
+        
         self.model.update()
         self.model.optimize()
-
         if self.model.status == GRB.INFEASIBLE:
             raise Exception("Infeasible")
         elif self.model.status == GRB.UNBOUNDED:
             raise Exception("Unbounded")
         else:
+            
             print("objective function value: ", self.model.objVal)
+            self.U = {(k, i, l): self.U[k, i, l].x for k in range(self.K) for i in range(self.n) for l in range(self.L+1)}
+            self.delta1 = {(k, j): self.delta1[k, j].x for k in range(self.K) for j in range(self.P)}
 
-        X_param = np.expand_dims(X[0], axis=0)
-        Y_param = np.expand_dims(Y[0], axis=0)
-        
-        utFuncX = self.predict_utility(X_param)
-        utFuncY = self.predict_utility(Y_param)
-
-        print("utility X: ", utFuncX)
-        print("utility Y: ", utFuncY)
-
-        
+            # plot_utilitary_fns(self.U)
         return self
-    
-
-
 
     def predict_utility(self, X):
-        """Return Decision Function of the MIP for X. - To be completed.
+            """Return Decision Function of the MIP for X. - To be completed.
 
-        Parameters:
-        -----------
-        X: np.ndarray
-            (n_samples, n_features) list of features of elements
-        
-        Returns
-        -------
-        np.ndarray:
-            (n_samples, n_clusters) array of decision function value for each cluster.
-        """
-        # To be completed
-        max_i = np.ones(self.n)*(1+self.epsilon)
-        min_i = np.ones(self.n)*(0+self.epsilon)
+            Parameters:
+            -----------
+            X: np.ndarray
+                (n_samples, n_features) list of features of elements
+            """
+            # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
+            max_i = np.ones(self.n)*1.01
+            min_i = np.ones(self.n)*-0.01
 
-        def LastIndex(x, i):
-            return np.floor(self.L * (x - min_i[i]) / (max_i[i] - min_i[i]))
-
-        def BreakPoints(i, l):
-                    return min_i[i] + l * (max_i[i] - min_i[i]) / self.L
-        
-        utFucnt = np.zeros((self.K, self.n, self.L+1))
-
-        for k in range (self.K):
-            for j in range(X.shape[0]):
-                for i in range(self.n):
-                    # l = LastIndex(X[j, i], i)
-                    utFucnt[j, k] += self.U[k, i, LastIndex(X[j, i], i)] + ((X[j, i] - BreakPoints(i, LastIndex(X[j, i], i))) / (BreakPoints(i, LastIndex(X[j, i], i)+1) 
-                                        - BreakPoints(i, LastIndex(X[j, i], i)))) * (self.U[k, i, LastIndex(X[j, i], i)+1] - self.U[k, i, LastIndex(X[j, i], i)])
-
-        return utFucnt
+            def get_last_index(x, i):
+                return int(np.floor(self.L * (x - min_i[i]) / (max_i[i] - min_i[i])))
 
 
-    
+            def get_bp(i, l):
+                return min_i[i] + l * (max_i[i] - min_i[i]) / self.L
+
+            utilities = np.zeros((X.shape[0], self.K))
+            for k in range(self.K):
+                for j in range(X.shape[0]):
+                    for i in range(self.n):
+                        l = get_last_index(X[j, i], i)
+                        utilities[j, k] += self.U[k, i, get_last_index(X[j, i], i)] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[k, i, get_last_index(X[j, i], i)+1] - self.U[k, i, get_last_index(X[j, i], i)])
+
+            return utilities
+
+
+
+
 
 
 
