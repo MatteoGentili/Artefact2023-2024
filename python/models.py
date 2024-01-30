@@ -185,10 +185,10 @@ class TwoClustersMIP(BaseModel):
         self.seed = 123
         self.L = n_pieces
         self.K = n_clusters
-        self.epsilon = 0.01
+        self.epsilon = 0.0001
         self.model = self.instantiate()
 
-    def instantiate(self, n_pieces, n_clusters): 
+    def instantiate(self): 
         
         model = Model("MIP_first_model")
         return model
@@ -258,6 +258,7 @@ class TwoClustersMIP(BaseModel):
                     uiKyiJ[k, i, j] = self.U[(k, i, l)] + ((Y[j, i] - bp) / (bp1 - bp)) * (self.U[(k, i, l+1)] - self.U[(k, i, l)])
 
         ## Constraint 2: 
+        ## Overestimation and underestimation variables
         uk_xj = {}
         for k in range(self.K):
             for j in range(self.P):
@@ -269,9 +270,6 @@ class TwoClustersMIP(BaseModel):
                 uk_yj[k, j] = quicksum(uiKyiJ[k, i, j] for i in range(self.n))
 
         ## Constraint 3:
-        self.model.addConstrs(
-            (uk_xj[k, j] - self.sigmaxPLUS[j] + self.sigmaxMINUS[j] - uk_yj[k, j] + self.sigmayPLUS[j] - self.sigmayMINUS[j] - self.epsilon <= M*self.delta1[(k,j)] - self.epsilon for j in range(self.P) for k in range(self.K))
-        )
 
         ## Constraint 4:
         # uk(x) > uk(y) + ϵ ⇐⇒ x ≽k y ==> x is preferred to y in cluster k
@@ -282,10 +280,52 @@ class TwoClustersMIP(BaseModel):
         ### MONOTONICITY:
         self.model.addConstrs((self.U[(k, i, l+1)] - self.U[(k, i, l)]>=self.epsilon for k in range(self.K) for i in range(self.n) for l in range(self.L)))
 
+        ## Constraint 6:
+        # Normalisation of the utility function
+        # ui(xi0) = 0
+        self.model.addConstrs((self.U[(k, i, 0)] == 0 for k in range(self.K) for i in range(self.n)))
+        # Σu_i(xi) = 1
+        self.model.addConstrs((quicksum(self.U[(k, i, self.L)] for i in range(self.n)) == 1 for k in range(self.K)))
+
+
+        ## Constraint 7:
+        # Σδ1(k, j) >= 1 there is at least one cluster k ux > uy in this cluster
+        for j in range(self.P):self.model.addConstr(quicksum(self.delta1[(k, j)] for k in range(self.K)) >= 1)
+
+        ## Constraint 8:
+        # M(1 − δ) ≤ x − x0 < M.δ
+        # x − x0 < M.δ ==> x − x0 <= M.δ - epsilon
+        self.model.addConstrs((uk_xj[k, j] - self.sigmaxPLUS[j] + self.sigmaxMINUS[j] - (uk_yj[k, j] - self.sigmayPLUS[j] + self.sigmayMINUS[j] )<= M*self.delta1[(k,j)] - self.epsilon for j in range(self.P) for k in range(self.K)))
+        #  M(1 − δ) ≤ x − x0 ==> x − x0 >= -M(1 − δ) 
+        self.model.addConstrs((uk_xj[k, j] - self.sigmaxPLUS[j] + self.sigmaxMINUS[j] - uk_yj[k, j] + self.sigmayPLUS[j] - self.sigmayMINUS[j] >= -M*(1-self.delta1[(k,j)]) for j in range(self.P) for k in range(self.K)))
+
         # Objective
         self.model.setObjective(quicksum(self.sigmaxPLUS[j] + self.sigmaxMINUS[j] + self.sigmayPLUS[j] + self.sigmayMINUS[j] for j in range(self.P)), GRB.MINIMIZE)
 
-        return
+        self.model.update()
+        self.model.optimize()
+
+        if self.model.status == GRB.INFEASIBLE:
+            raise Exception("Infeasible")
+        elif self.model.status == GRB.UNBOUNDED:
+            raise Exception("Unbounded")
+        else:
+            print("objective function value: ", self.model.objVal)
+
+        X_param = np.expand_dims(X[0], axis=0)
+        Y_param = np.expand_dims(Y[0], axis=0)
+        
+        utFuncX = self.predict_utility(X_param)
+        utFuncY = self.predict_utility(Y_param)
+
+        print("utility X: ", utFuncX)
+        print("utility Y: ", utFuncY)
+
+        
+        return self
+    
+
+
 
     def predict_utility(self, X):
         """Return Decision Function of the MIP for X. - To be completed.
@@ -301,7 +341,28 @@ class TwoClustersMIP(BaseModel):
             (n_samples, n_clusters) array of decision function value for each cluster.
         """
         # To be completed
-        return
+        max_i = np.ones(self.n)*(1+self.epsilon)
+        min_i = np.ones(self.n)*(0+self.epsilon)
+
+        def LastIndex(x, i):
+            return np.floor(self.L * (x - min_i[i]) / (max_i[i] - min_i[i]))
+
+        def BreakPoints(i, l):
+                    return min_i[i] + l * (max_i[i] - min_i[i]) / self.L
+        
+        utFucnt = np.zeros((self.K, self.n, self.L+1))
+
+        for k in range (self.K):
+            for j in range(X.shape[0]):
+                for i in range(self.n):
+                    # l = LastIndex(X[j, i], i)
+                    utFucnt[j, k] += self.U[k, i, LastIndex(X[j, i], i)] + ((X[j, i] - BreakPoints(i, LastIndex(X[j, i], i))) / (BreakPoints(i, LastIndex(X[j, i], i)+1) 
+                                        - BreakPoints(i, LastIndex(X[j, i], i)))) * (self.U[k, i, LastIndex(X[j, i], i)+1] - self.U[k, i, LastIndex(X[j, i], i)])
+
+        return utFucnt
+
+
+    
 
 
 
@@ -350,3 +411,4 @@ class HeuristicModel(BaseModel):
         # To be completed
         # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
         return
+
