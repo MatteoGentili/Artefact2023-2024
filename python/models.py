@@ -1,6 +1,7 @@
 import pickle
 from abc import abstractmethod
 from gurobipy import *
+import matplotlib.pyplot as plt
 
 import numpy as np
 
@@ -192,8 +193,32 @@ class TwoClustersMIP(BaseModel):
         
         model = Model("MIP_first_model")
         return model
- 
+        
+    
+
     def fit(self, X, Y):
+        # Reference to the UTA University exercice 
+        def BreakPoints(i, l):
+            return min[i] + l * (max[i] - min[i]) / self.L
+            
+
+
+        def plot_delta(self,delta):
+            # Create a 2D array from the delta1 dictionary
+            delta1_array = np.zeros((self.K, self.P))
+            for k in range(self.K):
+                for j in range(self.P):
+                    delta1_array[k, j] = delta[(k, j)]
+            
+            # Plot the 2D array as a heatmap
+            plt.figure(figsize=(10, 6))
+            plt.imshow(delta1_array, aspect='auto')
+            plt.colorbar(label='Delta Value')
+            plt.xlabel('j')
+            plt.ylabel('k')
+            plt.title('Delta Values for each (k, j)')
+            plt.show()
+
         """Estimation of the parameters - To be completed.
 
         Parameters
@@ -213,9 +238,7 @@ class TwoClustersMIP(BaseModel):
         def LastIndex(x, i):
             return np.floor(self.L * (x - min[i]) / (max[i] - min[i]))
         
-        # Reference to the UTA University exercice 
-        def BreakPoints(i, l):
-                    return min[i] + l * (max[i] - min[i]) / self.L
+        
         
         # Varariables of the model
         self.U = {
@@ -302,15 +325,7 @@ class TwoClustersMIP(BaseModel):
         # Objective
         self.model.setObjective(quicksum(self.sigmaxPLUS[j] + self.sigmaxMINUS[j] + self.sigmayPLUS[j] + self.sigmayMINUS[j] for j in range(self.P)), GRB.MINIMIZE)
 
-        # def plot_utilitary_fns(U):
-        #     import matplotlib.pyplot as plt
-        #     for k in range(self.K):
-        #         for i in range(self.n):
-        #             plt.plot([BreakPoints(i, l) for l in range(self.L+1)], [U[k, i, l] for l in range(self.L+1)])
-        #         plt.legend(["feature {}".format(i) for i in range(self.n)])
-        #         plt.show()
-
-        
+              #
         self.model.update()
         self.model.optimize()
         if self.model.status == GRB.INFEASIBLE:
@@ -323,86 +338,113 @@ class TwoClustersMIP(BaseModel):
             self.U = {(k, i, l): self.U[k, i, l].x for k in range(self.K) for i in range(self.n) for l in range(self.L+1)}
             self.delta1 = {(k, j): self.delta1[k, j].x for k in range(self.K) for j in range(self.P)}
 
-            # plot_utilitary_fns(self.U)
+
+
+            plt.figure(figsize=(10, 6))
+            for k in range(self.K):
+                for i in range(self.n):
+                    plt.plot([BreakPoints(i, l) for l in range(self.L+1)], [self.U[k, i, l] for l in range(self.L+1)], label=f'Cluster {k}, Feature {i}')
+            plt.legend()
+            plt.xlabel('Breakpoints')
+            plt.ylabel('Utility Value')
+            plt.title('Utility Functions for each Cluster and Feature')
+            plt.show()
+
+            # plot_delta(self, self.delta1)
+
         return self
 
-    def predict_utility(self, X):
-            """Return Decision Function of the MIP for X. - To be completed.
-
-            Parameters:
-            -----------
-            X: np.ndarray
-                (n_samples, n_features) list of features of elements
-            """
-            # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
-            max_i = np.ones(self.n)*1.01
-            min_i = np.ones(self.n)*-0.01
-
-            def get_last_index(x, i):
-                return int(np.floor(self.L * (x - min_i[i]) / (max_i[i] - min_i[i])))
-
-
-            def get_bp(i, l):
-                return min_i[i] + l * (max_i[i] - min_i[i]) / self.L
-
-            utilities = np.zeros((X.shape[0], self.K))
-            for k in range(self.K):
-                for j in range(X.shape[0]):
-                    for i in range(self.n):
-                        l = get_last_index(X[j, i], i)
-                        utilities[j, k] += self.U[k, i, get_last_index(X[j, i], i)] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[k, i, get_last_index(X[j, i], i)+1] - self.U[k, i, get_last_index(X[j, i], i)])
-
-            return utilities
-
-
-
-
-
-
-
-class HeuristicModel(BaseModel):
-    """Skeleton of MIP you have to write as the first exercise.
-    You have to encapsulate your code within this class that will be called for evaluation.
-    """
-
-    def __init__(self):
-        """Initialization of the Heuristic Model.
-        """
-        self.seed = 123
-        self.models = self.instantiate()
-
-    def instantiate(self):
-        """Instantiation of the MIP Variables"""
-        # To be completed
-        return
-
-    def fit(self, X, Y):
-        """Estimation of the parameters - To be completed.
-
-        Parameters
-        ----------
-        X: np.ndarray
-            (n_samples, n_features) features of elements preferred to Y elements
-        Y: np.ndarray
-            (n_samples, n_features) features of unchosen elements
-        """
-        # To be completed
-        return
 
     def predict_utility(self, X):
+
         """Return Decision Function of the MIP for X. - To be completed.
 
         Parameters:
         -----------
         X: np.ndarray
             (n_samples, n_features) list of features of elements
-        
-        Returns
-        -------
-        np.ndarray:
-            (n_samples, n_clusters) array of decision function value for each cluster.
         """
-        # To be completed
-        # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
-        return
+        max_i = np.ones(self.n)*1.01
+        min_i = np.ones(self.n)*-0.01
+
+        def get_last_index(x, i):
+            return int(np.floor(self.L * (x - min_i[i]) / (max_i[i] - min_i[i])))
+
+
+        def get_bp(i, l):
+            return min_i[i] + l * (max_i[i] - min_i[i]) / self.L
+
+        utilities = np.zeros((X.shape[0], self.K))
+        for k in range(self.K):
+            for j in range(X.shape[0]):
+                for i in range(self.n):
+                    l = get_last_index(X[j, i], i)
+                    utilities[j, k] += self.U[k, i, get_last_index(X[j, i], i)] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[k, i, get_last_index(X[j, i], i)+1] - self.U[k, i, get_last_index(X[j, i], i)])
+         
+        return utilities
+
+import numpy as np
+
+class HeuristicModel(BaseModel):
+    def __init__(self, n_clusters):
+        self.n_clusters = n_clusters
+        self.cluster_centers = None
+
+    def fit(self, X, Y):
+        # Calculate the mean feature values for each cluster
+        self.cluster_centers = np.zeros((self.n_clusters, X.shape[1]))
+
+        for cluster in range(self.n_clusters):
+            cluster_samples = X[Y == cluster]
+            if len(cluster_samples) > 0:
+                self.cluster_centers[cluster] = np.mean(cluster_samples, axis=0)
+            else:
+                # If no samples in the cluster, use the mean of all samples as the center
+                self.cluster_centers[cluster] = np.mean(X, axis=0)
+
+    def predict_utility(self, X):
+        # Calculate the distance between each sample and each cluster center
+        distances = np.linalg.norm(X[:, np.newaxis, :] - self.cluster_centers, axis=2)
+
+        # Invert the distances to represent utilities (closer is better)
+        utilities = 1 / (1 + distances)
+
+        return utilities
+
+
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+
+class ImprovedHeuristicModel(BaseModel):
+    def __init__(self, n_clusters):
+        self.n_clusters = n_clusters
+        self.kmeans = KMeans(n_clusters=n_clusters, random_state=123)
+        self.scaler = StandardScaler()
+
+    def fit(self, X, Y):
+        # Scale features
+        X_scaled = self.scaler.fit_transform(X)
+        Y_scaled = self.scaler.transform(Y)
+
+        # Fit KMeans
+        self.kmeans.fit(X_scaled)
+
+    def predict_utility(self, X):
+        # Scale input features
+        X_scaled = self.scaler.transform(X)
+
+        # Predict cluster labels
+        cluster_labels = self.kmeans.predict(X_scaled)
+
+        # Calculate utilities based on distance to cluster centers
+        distances = self.kmeans.transform(X_scaled)
+        utilities = 1 / (1 + distances)
+
+        # Assign utility values to clusters
+        cluster_utilities = np.zeros((X.shape[0], self.n_clusters))
+        for i in range(self.n_clusters):
+            cluster_utilities[:, i] = utilities[:, cluster_labels == i].mean(axis=1)
+
+        return cluster_utilities
 
