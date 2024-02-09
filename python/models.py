@@ -383,68 +383,114 @@ class TwoClustersMIP(BaseModel):
          
         return utilities
 
-import numpy as np
-
 class HeuristicModel(BaseModel):
-    def __init__(self, n_clusters):
-        self.n_clusters = n_clusters
-        self.cluster_centers = None
+    """Skeleton of MIP you have to write as the first exercise.
+    You have to encapsulate your code within this class that will be called for evaluation.
+    """
+
+    def __init__(self):
+        """Initialization of the Heuristic Model.
+        """
+        self.seed = 123
+        self.models = self.instantiate()
+
+    def instantiate(self):
+        """Instantiation of the MIP Variables"""
+        # To be completed
+        return
 
     def fit(self, X, Y):
-        # Calculate the mean feature values for each cluster
-        self.cluster_centers = np.zeros((self.n_clusters, X.shape[1]))
+        """Estimation of the parameters - To be completed.
 
-        for cluster in range(self.n_clusters):
-            cluster_samples = X[Y == cluster]
-            if len(cluster_samples) > 0:
-                self.cluster_centers[cluster] = np.mean(cluster_samples, axis=0)
-            else:
-                # If no samples in the cluster, use the mean of all samples as the center
-                self.cluster_centers[cluster] = np.mean(X, axis=0)
-
-    def predict_utility(self, X):
-        # Calculate the distance between each sample and each cluster center
-        distances = np.linalg.norm(X[:, np.newaxis, :] - self.cluster_centers, axis=2)
-
-        # Invert the distances to represent utilities (closer is better)
-        utilities = 1 / (1 + distances)
-
-        return utilities
-
-
-from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
-import numpy as np
-
-class ImprovedHeuristicModel(BaseModel):
-    def __init__(self, n_clusters):
-        self.n_clusters = n_clusters
-        self.kmeans = KMeans(n_clusters=n_clusters, random_state=123)
-        self.scaler = StandardScaler()
-
-    def fit(self, X, Y):
-        # Scale features
-        X_scaled = self.scaler.fit_transform(X)
-        Y_scaled = self.scaler.transform(Y)
-
-        # Fit KMeans
-        self.kmeans.fit(X_scaled)
+        Parameters
+        ----------
+        X: np.ndarray
+            (n_samples, n_features) features of elements preferred to Y elements
+        Y: np.ndarray
+            (n_samples, n_features) features of unchosen elements
+        """
+        # To be completed
+        return
 
     def predict_utility(self, X):
-        # Scale input features
-        X_scaled = self.scaler.transform(X)
+        """Return Decision Function of the MIP for X. - To be completed.
 
-        # Predict cluster labels
-        cluster_labels = self.kmeans.predict(X_scaled)
+        Parameters:
+        -----------
+        X: np.ndarray
+            (n_samples, n_features) list of features of elements
+        
+        Returns
+        -------
+        np.ndarray:
+            (n_samples, n_clusters) array of decision function value for each cluster.
+        """
+        # To be completed
+        # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
+        return
+    
+# import numpy as np
 
-        # Calculate utilities based on distance to cluster centers
-        distances = self.kmeans.transform(X_scaled)
-        utilities = 1 / (1 + distances)
+# class HeuristicModel(BaseModel):
+#     def __init__(self, n_clusters):
+#         self.n_clusters = n_clusters
+#         self.cluster_centers = None
 
-        # Assign utility values to clusters
-        cluster_utilities = np.zeros((X.shape[0], self.n_clusters))
-        for i in range(self.n_clusters):
-            cluster_utilities[:, i] = utilities[:, cluster_labels == i].mean(axis=1)
+#     def fit(self, X, Y):
+#         # Calculate the mean feature values for each cluster
+#         self.cluster_centers = np.zeros((self.n_clusters, X.shape[1]))
 
-        return cluster_utilities
+#         for cluster in range(self.n_clusters):
+#             cluster_samples = X[Y == cluster]
+#             if len(cluster_samples) > 0:
+#                 self.cluster_centers[cluster] = np.mean(cluster_samples, axis=0)
+#             else:
+#                 # If no samples in the cluster, use the mean of all samples as the center
+#                 self.cluster_centers[cluster] = np.mean(X, axis=0)
+
+#     def predict_utility(self, X):
+#         # Calculate the distance between each sample and each cluster center
+#         distances = np.linalg.norm(X[:, np.newaxis, :] - self.cluster_centers, axis=2)
+
+#         # Invert the distances to represent utilities (closer is better)
+#         utilities = 1 / (1 + distances)
+
+#         return utilities
+
+
+# from sklearn.cluster import KMeans
+# from sklearn.preprocessing import StandardScaler
+# import numpy as np
+
+# class ImprovedHeuristicModel(BaseModel):
+#     def __init__(self, n_clusters):
+#         self.n_clusters = n_clusters
+#         self.kmeans = KMeans(n_clusters=n_clusters, random_state=123)
+#         self.scaler = StandardScaler()
+
+#     def fit(self, X, Y):
+#         # Scale features
+#         X_scaled = self.scaler.fit_transform(X)
+#         Y_scaled = self.scaler.transform(Y)
+
+#         # Fit KMeans
+#         self.kmeans.fit(X_scaled)
+
+#     def predict_utility(self, X):
+#         # Scale input features
+#         X_scaled = self.scaler.transform(X)
+
+#         # Predict cluster labels
+#         cluster_labels = self.kmeans.predict(X_scaled)
+
+#         # Calculate utilities based on distance to cluster centers
+#         distances = self.kmeans.transform(X_scaled)
+#         utilities = 1 / (1 + distances)
+
+#         # Assign utility values to clusters
+#         cluster_utilities = np.zeros((X.shape[0], self.n_clusters))
+#         for i in range(self.n_clusters):
+#             cluster_utilities[:, i] = utilities[:, cluster_labels == i].mean(axis=1)
+
+#         return cluster_utilities
 
