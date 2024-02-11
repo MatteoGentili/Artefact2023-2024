@@ -309,16 +309,15 @@ class TwoClustersMIP(BaseModel):
             self.U = {(k, i, l): self.U[k, i, l].x for k in range(self.K) for i in range(self.n) for l in range(self.L+1)}
             self.delta1 = {(k, j): self.delta1[k, j].x for k in range(self.K) for j in range(self.P)}
 
-            # Plot the utility functions
-            plt.figure(figsize=(10, 6))
             for k in range(self.K):
+                plt.figure(figsize=(5, 3))
                 for i in range(self.n):
                     plt.plot([BreakPoints(i, l) for l in range(self.L+1)], [self.U[k, i, l] for l in range(self.L+1)], label=f'Cluster {k}, Feature {i}')
-            plt.legend()
-            plt.xlabel('Breakpoints')
-            plt.ylabel('Utility Value')
-            plt.title('Utility Functions for each Cluster and Feature')
-            plt.show()
+                plt.legend()
+                plt.xlabel('Breakpoints')
+                plt.ylabel('Utility Value')
+                plt.title(f'Utility Functions for Cluster {k}')
+                plt.show()
         return self
 
 
@@ -372,7 +371,6 @@ class Genetique(BaseModel):
 
     def instantiate(self):
         """Instantiation of the MIP Variables"""
-        # To be completed
         return
 
     def fit(self, X, Y):
@@ -385,7 +383,6 @@ class Genetique(BaseModel):
         Y: np.ndarray
             (n_samples, n_features) features of unchosen elements
         """
-        # To be completed
         self.run_genetic_algorithm(X, Y)
         return
 
@@ -732,10 +729,6 @@ class HeuristicModel(BaseModel):
                 self.model.addConstrs((self.U[k][(i, 0)] == 0 for i in range(self.n)))
                 # Σu_i(xi) = 1
                 self.model.addConstr((quicksum(self.U[k][(i, self.L)] for i in range(self.n)) == 1 ))
-
-
-                ## Constraint 7:
-                # Σδ1(k, j) >= 1 there is at least one cluster k ux > uy in this cluster
                 
                 # Objective
                 self.model.setObjective(quicksum(self.sigmaxPLUS[k][j] + self.sigmaxMINUS[k][j] + self.sigmayPLUS[k][j] + self.sigmayMINUS[k][j] for j in range(self.len_clusters[k])), GRB.MINIMIZE)
@@ -754,7 +747,19 @@ class HeuristicModel(BaseModel):
                     self.sigmayMINUS[k] ={(j): self.sigmayMINUS[k][j].x for j in range(self.len_clusters[k])}
                     self.sigmaxPLUS[k] ={(j): self.sigmaxPLUS[k][j].x for j in range(self.len_clusters[k])}
                     self.sigmayPLUS[k] ={(j): self.sigmayPLUS[k][j].x for j in range(self.len_clusters[k])}
-                    
+
+                if isinstance(self.U[2], dict):
+                    for k in range(self.K):
+                        if isinstance(self.U[k], dict):
+                            plt.figure(figsize=(8, 4))
+                            for i in range(self.n):
+                                plt.plot([self.BreakPoints(i, l) for l in range(self.L+1)], [self.U[k][(i, l)] for l in range(self.L+1)], label=f'Cluster {k}, Feature {i}')
+                            plt.legend()
+                            plt.xlabel('Breakpoints')
+                            plt.ylabel('Utility Value')
+                            plt.title(f'Utility Functions for Cluster {k}')
+                            plt.show()
+                                    
         return self
 
 
