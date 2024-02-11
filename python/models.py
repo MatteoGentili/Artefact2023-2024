@@ -1,9 +1,10 @@
 import pickle
 from abc import abstractmethod
 from gurobipy import *
-
+import random
 import numpy as np
-
+from sklearn.cluster import KMeans
+from collections import Counter
 
 class BaseModel(object):
     """
@@ -355,21 +356,25 @@ class TwoClustersMIP(BaseModel):
             return utilities
 
 
-
-
-
-
-
-class HeuristicModel(BaseModel):
+class Genetique(BaseModel):
     """Skeleton of MIP you have to write as the first exercise.
     You have to encapsulate your code within this class that will be called for evaluation.
     """
 
-    def __init__(self):
+    def __init__(self, n_pieces, n_clusters, population_size=48, generations=500):
         """Initialization of the Heuristic Model.
         """
         self.seed = 123
+        self.L = n_pieces
+        self.K = n_clusters
+        self.nb_criteres = 10
+        self.epsilon = 0.001
+        self.population_size = population_size
+        self.generations = generations
+        self.population = []  # List to store individuals
+        self.model = self.instantiate()
         self.models = self.instantiate()
+        self.best_individual = None
 
     def instantiate(self):
         """Instantiation of the MIP Variables"""
@@ -387,22 +392,415 @@ class HeuristicModel(BaseModel):
             (n_samples, n_features) features of unchosen elements
         """
         # To be completed
+        self.run_genetic_algorithm(X, Y)
         return
 
-    def predict_utility(self, X):
+    def run_genetic_algorithm(self, X, Y):
+        """Run the genetic algorithm to optimize the heuristic model."""
+        self.initialize_population()
+
+        for generation in range(self.generations):
+        
+            # Evaluate individuals in the population
+            fitness_scores = self.evaluate_population(X, Y)
+            print("score de la génération", generation, ":", fitness_scores)
+            # Select individuals for reproduction
+            selected_indices = self.selection(X,Y)
+
+            # Create new population through crossover and mutation
+            new_population = self.reproduce(selected_indices)
+
+            # Replace old population with new population
+            self.population = new_population
+
+        # Final evaluation and update the model with the best individual
+        best_individual_index = np.argmax(fitness_scores)
+        best_individual_score = np.max(fitness_scores)
+        self.best_individual = self.population[best_individual_index]
+
+        print("best_individual_score:", best_individual_score)
+
+    def initialize_population(self):
+        """Initialize the population with random individuals."""
+        for _ in range(self.population_size):
+            individual = self.generate_random_individual()
+            self.population.append(individual)
+
+    def generate_random_individual(self):
+        """Generate a random individual."""
+        # Generate random values between 0 and 5 for each element in each criterion
+        random_individual = [
+            [random.uniform(0, 5) for _ in range(self.L)]
+            for _ in range(self.nb_criteres)
+        ]
+
+        return random_individual
+
+    def evaluate_population(self, X, Y):
+        """Evaluate the fitness of each individual in the population."""
+        fitness_scores = []
+        for individual in self.population:
+            # To be completed based on your evaluation criteria
+            fitness = self.evaluate_individual(individual, X, Y)
+            fitness_scores.append(fitness)
+        return np.array(fitness_scores)
+
+    def evaluate_individual(self, individual, X, Y):
+        
+        """Evaluate the fitness of a single individual."""
+        indivVals = [[np.sum([individual[l][i]*0.2 for i in range (k)]) for k in range(1,6)]for l in range(self.nb_criteres)]
+        score = []
+        for i in range(len(X)):
+            scoreiX = []
+            scoreiY = []
+            for u in range(self.nb_criteres):
+                indiceX = int(np.floor((X[i][u]-0.01) / 0.2))
+                #print("indiceX", indiceX)
+                scoreIndivICritUX = indivVals[u][indiceX] + individual[u][indiceX]*(X[i][u] - (np.floor(X[i][u]/0.2))*0.2)
+                indiceY = int(np.floor((Y[i][u]-0.01)/0.2))
+                #print("indiceY", indiceY)
+                scoreIndivICritUY = indivVals[u][indiceY] + individual[u][indiceY]*(Y[i][u] - (np.floor(Y[i][u]/0.2))*0.2)
+                scoreiX.append(scoreIndivICritUX)
+                scoreiY.append(scoreIndivICritUY)
+            scoreX = np.sum(scoreiX)
+            scoreY = np.sum(scoreiY)
+            score.append(scoreX - scoreY >= 0)
+
+        scoreTotalIndiv = np.sum(score)/len(X)
+
+        # To be completed based on your evaluation criteria
+        return scoreTotalIndiv
+
+    def selection(self, X, Y):
+            
+        # Evaluate individuals in the population and get their fitness scores
+        fitness_scores = [self.evaluate_individual(individual, X, Y) for individual in self.population]
+
+        # Sort individuals based on fitness scores in descending order
+        sorted_population = [ind for _, ind in sorted(zip(fitness_scores, self.population), reverse=True)]
+
+        # Ensure the number of selected individuals is even
+        num_selected = len(sorted_population) // 2 * 2
+
+        # Select the top half of individuals
+        selected_population = sorted_population[:num_selected]
+        print(max(fitness_scores))
+        return selected_population
+
+
+
+    def reproduce(self, selected_population):
+        
+        new_population = selected_population
+
+        # Perform crossover and mutation to create new individuals
+        for _ in range(len(selected_population)//2):
+            # Select two parents for crossover
+            parent1, parent2 = self.select_parents(selected_population)
+            selected_population.remove(parent1)
+            selected_population.remove(parent2)
+
+            # Apply crossover to create two offspring
+            offspring1, offspring2 = self.crossover(parent1, parent2)
+
+            # Apply mutation to the offspring
+            offspring1 = self.mutate(offspring1)
+            offspring2 = self.mutate(offspring2)
+
+            # Add offspring to the new population
+            new_population.extend([offspring1, offspring2])
+
+        return new_population
+
+    def select_parents(self, selected_population):
+        """Select two parents from the selected population."""
+        # Ensure the selected_population has at least two individuals
+        if len(selected_population) < 2:
+            raise ValueError("Insufficient individuals in the selected population for parent selection.")
+
+        # Randomly select two distinct parents
+        parent1, parent2 = random.sample(selected_population, 2)
+
+        return parent1, parent2
+
+    def crossover(self, parent1, parent2):
+        # Define the crossover point 
+        crossover_point = 3
+        offspring1 = []
+        offspring2 = []
+        # Create offspring with elements from parents
+        for k in range(self.nb_criteres):
+
+            offspring1.append(parent1[k][:crossover_point] + parent2[k][crossover_point:])
+            offspring2.append(parent2[k][:crossover_point] + parent1[k][crossover_point:])
+
+        return offspring1, offspring2
+
+    def mutate(self, individual):
+        
+        random_index = random.randint(0, self.nb_criteres - 1)
+        random_l = random.randint(0, self.L - 1)
+        random_value = random.uniform(0, 5)
+        ThereIsMUTATION = (random.randint(0, 100) == 8)
+        if ThereIsMUTATION:
+            individual[random_index][random_l] = random_value
+
+        mutated_individual = individual
+        # To be completed (implement mutation operation)
+        return mutated_individual
+    
+
+    def predict_utility(self, X,Y):
         """Return Decision Function of the MIP for X. - To be completed.
 
         Parameters:
         -----------
         X: np.ndarray
             (n_samples, n_features) list of features of elements
-        
+
         Returns
         -------
         np.ndarray:
             (n_samples, n_clusters) array of decision function value for each cluster.
         """
-        # To be completed
-        # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
-        return
 
+        
+        # To be completed
+        # Do not forget that this method is called in predict_preference (line 42) and therefore should return well-organized data for it to work.
+        return "resultat de predict_utility, pour l'instant rien"
+
+class HeuristicModel(BaseModel):
+    """Skeleton of MIP you have to write as the first exercise.
+    You have to encapsulate your code within this class that will be called for evaluation.
+    """
+
+    def __init__(self, n_pieces, n_clusters,nb_criteres,nb_iterations= 20):
+        """Initialization of the MIP Variables
+
+        Parameters
+        ----------
+        n_pieces: int
+            Number of pieces for the utility function of each feature.
+        n_clusters: int
+            Number of clusters to implement in the MIP.
+        """
+        self.iterations=nb_iterations
+        self.iteration = 0
+        self.n = nb_criteres
+        self.seed = 123
+        self.L = n_pieces
+        self.K = n_clusters
+        self.epsilon = 0.001
+        self.model = self.instantiate()
+        self.U = [0 for _ in range(n_clusters)]
+        self.len_clusters = [0 for _ in range(n_clusters)]
+        self.sigmaxPLUS = [0 for _ in range(n_clusters)]
+        self.sigmayPLUS = [0 for _ in range(n_clusters)]
+        self.sigmaxMINUS = [0 for _ in range(n_clusters)]
+        self.sigmayMINUS = [0 for _ in range(n_clusters)]
+
+    def count_occurrences(self,clustering):
+        # Utiliser Counter pour compter les occurrences de chaque valeur
+        occurrences = Counter(clustering)
+        
+        # Convertir le résultat en une liste de tuples (valeur, nombre d'occurrences)
+        occurrences_list = list(occurrences.items())
+        
+        # Trier la liste par valeurs pour obtenir une représentation ordonnée
+        sorted_occurrences = sorted(occurrences_list, key=lambda x: x[0])
+        
+        # Diviser la liste en deux listes séparées (valeurs, nombre d'occurrences)
+        values, counts = zip(*sorted_occurrences)
+        
+        return counts
+    
+    def clustering_Kmeans(self,X,Y):
+        data =X-Y
+        kmeans = KMeans(n_clusters=self.K, random_state=42)
+        clustering = kmeans.fit_predict(data)
+        self.len_clusters = self.count_occurrences(clustering)
+        return  kmeans.fit_predict(data)
+
+    def LastIndex(self,x, i):
+        return int(np.floor(self.L * (x + 0.01) / (1.01 + 0.01)))
+    
+    # Reference to the UTA University exercice 
+    def BreakPoints(self,i, l):
+                return  -0.01 + l * (1.01 - 0.01) / self.L
+    
+    
+    def instantiate(self): 
+        
+        model = Model("heuristique")
+
+        return model
+ 
+    def fit(self, X, Y):
+        """Estimation of the parameters - To be completed.
+
+        Parameters
+        ----------
+        X: np.ndarray
+            (n_samples, n_features) features of elements preferred to Y elements
+        Y: np.ndarray
+            (n_samples, n_features) features of unchosen elements
+        """
+        for iter in range(self.iterations):
+            if self.iteration == 0:
+                clusters = self.clustering_Kmeans(X,Y) 
+            else:
+                uixiJ = {} # uik_xij[i, j] = U_k(i, X[j, i])
+                for i in range(self.n):
+                    j=0
+                    for cluster,xj in zip(clusters,X):
+                            l = self.LastIndex(xj[i], i)
+                            bp = self.BreakPoints(i, l)
+                            bp1 = self.BreakPoints(i, l+1)
+                            uixiJ[i, j] = self.U[cluster][(i, l)] + ((xj[i] - bp) / (bp1 - bp)) * (self.U[cluster][(i, l+1)] - self.U[cluster][(i, l)])
+                            j+=1
+                
+                uiyiJ = {}
+                for i in range(self.n):
+                    j=0
+                    for cluster,yj in zip(clusters,Y):
+                            l = self.LastIndex(yj[i], i)
+                            bp = self.BreakPoints(i, l)
+                            bp1 = self.BreakPoints(i, l+1)
+                            uiyiJ[i, j] = self.U[cluster][(i, l)] + ((yj[i] - bp) / (bp1 - bp)) * (self.U[cluster][(i, l+1)] - self.U[cluster][(i, l)])
+                            j+=1
+                u_xj = {}
+                u_yj = {}
+                
+                for j in range(len((X[0]))):
+                    u_xj[j] = quicksum(uixiJ[i, j] for i in range(self.n))
+                for j in range(len((X[0]))):
+                    u_yj[j] = quicksum(uiyiJ[i, j] for i in range(self.n))
+
+                Ux = [u_xj[j] for j in range(len(X[0]))]
+                Uy = [u_yj[j] for j in range(len(X[0]))]
+                clusters = self.clustering_Kmeans(Ux,Uy)
+                self.iteration +=1
+
+            #on se place dans le cluster k:
+            for k in range(self.K):
+                self.U[k] = {
+                    (criteria, linearSegmentUTA): self.model.addVar(
+                        vtype=GRB.CONTINUOUS, lb=0, name="u_{}_{}".format(criteria, linearSegmentUTA), ub=1)
+                        for criteria in range(self.n)
+                        for  linearSegmentUTA in range(self.L+1) # Need to add +1 because of the last segment {Uk and UK+1}
+                }
+
+                # Overestimation and underestimation variables
+                self.sigmaxPLUS[k] = {(jX): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaxp_{}".format(jX), ub=1) for jX in range(self.len_clusters[k])}
+                self.sigmayPLUS[k] = {(jY): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmayp_{}".format(jY), ub=1) for jY in range(self.len_clusters[k])}
+                self.sigmaxMINUS[k] = {(jX): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaxm_{}".format(jX), ub=1) for jX in range(self.len_clusters[k])}
+                self.sigmayMINUS[k] = {(jY): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaym_{}".format(jY), ub=1) for jY in range(self.len_clusters[k])}
+                # Constraints
+                
+                uixiJ = {} # uik_xij[i, j] = U_k(i, X[j, i])
+                for i in range(self.n):
+                    j=0
+                    for cluster,xj in zip(clusters,X):
+                        if cluster == k:
+                            l = self.LastIndex(xj[i], i)
+                            bp = self.BreakPoints(i, l)
+                            bp1 = self.BreakPoints(i, l+1)
+                            uixiJ[i, j] = self.U[k][(i, l)] + ((xj[i] - bp) / (bp1 - bp)) * (self.U[k][(i, l+1)] - self.U[k][(i, l)])
+                            j+=1
+                
+                uiyiJ = {}
+                for i in range(self.n):
+                    j=0
+                    for cluster,yj in zip(clusters,Y):
+                        if cluster == k:
+                            l = self.LastIndex(yj[i], i)
+                            bp = self.BreakPoints(i, l)
+                            bp1 = self.BreakPoints(i, l+1)
+                            uiyiJ[i, j] = self.U[k][(i, l)] + ((yj[i] - bp) / (bp1 - bp)) * (self.U[k][(i, l+1)] - self.U[k][(i, l)])
+                            j+=1
+                u_xj = {}
+                u_yj = {}
+                
+                for j in range(self.len_clusters[k]):
+                    u_xj[j] = quicksum(uixiJ[i, j] for i in range(self.n))
+                for j in range(self.len_clusters[k]):
+                    u_yj[j] = quicksum(uiyiJ[i, j] for i in range(self.n))
+
+
+                for j in range(self.len_clusters[k]):
+                    self.model.addConstr((u_xj[j] - self.sigmaxPLUS[k][j] + self.sigmaxMINUS[k][j] - u_yj[j] + self.sigmayPLUS[k][j] - self.sigmayMINUS[k][j] >=self.epsilon))
+
+                
+                ### MONOTOMIE:
+                self.model.addConstrs((self.U[k][(i, l+1)] - self.U[k][(i, l)]>=self.epsilon for i in range(self.n) for l in range(self.L)))
+
+                ## Constraint 6:
+                # Normalisation of the utility function
+                # ui(xi0) = 0
+                self.model.addConstrs((self.U[k][(i, 0)] == 0 for i in range(self.n)))
+                # Σu_i(xi) = 1
+                self.model.addConstr((quicksum(self.U[k][(i, self.L)] for i in range(self.n)) == 1 ))
+
+
+                ## Constraint 7:
+                # Σδ1(k, j) >= 1 there is at least one cluster k ux > uy in this cluster
+                
+                # Objective
+                self.model.setObjective(quicksum(self.sigmaxPLUS[k][j] + self.sigmaxMINUS[k][j] + self.sigmayPLUS[k][j] + self.sigmayMINUS[k][j] for j in range(self.len_clusters[k])), GRB.MINIMIZE)
+
+                # def plot_utilitary_fns(U):
+                #     import matplotlib.pyplot as plt
+                #     for k in range(self.K):
+                #         for i in range(self.n):
+                #             plt.plot([BreakPoints(i, l) for l in range(self.L+1)], [U[k, i, l] for l in range(self.L+1)])
+                #         plt.legend(["feature {}".format(i) for i in range(self.n)])
+                #         plt.show()
+
+                
+                self.model.update()
+                self.model.optimize()
+                if self.model.status == GRB.INFEASIBLE:
+                    raise Exception("Infeasible")
+                elif self.model.status == GRB.UNBOUNDED:
+                    raise Exception("Unbounded")
+                else:
+                    
+                    print(f"objective function value in cluster{k}: ", self.model.objVal)
+                    self.U[k] = {(i, l): self.U[k][i, l].x for i in range(self.n) for l in range(self.L+1)}
+                    self.sigmaxMINUS[k] ={(j): self.sigmaxMINUS[k][j].x for j in range(self.len_clusters[k])}
+                    self.sigmayMINUS[k] ={(j): self.sigmayMINUS[k][j].x for j in range(self.len_clusters[k])}
+                    self.sigmaxPLUS[k] ={(j): self.sigmaxPLUS[k][j].x for j in range(self.len_clusters[k])}
+                    self.sigmayPLUS[k] ={(j): self.sigmayPLUS[k][j].x for j in range(self.len_clusters[k])}
+                    # plot_utilitary_fns(self.U)
+                    
+        return self
+
+
+
+
+    def predict_utility(self, X):
+            """Return Decision Function of the MIP for X. - To be completed.
+
+            Parameters:
+            -----------
+            X: np.ndarray
+                (n_samples, n_features) list of features of elements
+            """
+            # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
+            max_i = np.ones(self.n)*1.01
+            min_i = np.ones(self.n)*-0.01
+
+            def get_last_index(x, i):
+                return int(np.floor(self.L * (x - min_i[i]) / (max_i[i] - min_i[i])))
+
+
+            def get_bp(i, l):
+                return min_i[i] + l * (max_i[i] - min_i[i]) / self.L
+
+            utilities = np.zeros((X.shape[0], self.K))
+            for k in range(self.K):
+                for j in range(X.shape[0]):
+                    for i in range(self.n):
+                        utilities[j, k] += self.U[k][i, get_last_index(X[j, i], i)] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[k][i, get_last_index(X[j, i], i)+1] - self.U[k][i, get_last_index(X[j, i], i)])
+
+            return utilities
