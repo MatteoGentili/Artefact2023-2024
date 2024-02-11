@@ -574,7 +574,7 @@ class HeuristicModel(BaseModel):
     You have to encapsulate your code within this class that will be called for evaluation.
     """
 
-    def __init__(self, n_pieces, n_clusters,nb_criteres,nb_iterations= 20):
+    def __init__(self, n_pieces, n_clusters,nb_criteres,nb_iterations= 1):
         """Initialization of the MIP Variables
 
         Parameters
