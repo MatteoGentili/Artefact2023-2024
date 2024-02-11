@@ -557,8 +557,6 @@ class Genetique(BaseModel):
         np.ndarray:
             (n_samples, n_clusters) array of decision function value for each cluster.
         """
-
-        
         # To be completed
         # Do not forget that this method is called in predict_preference (line 42) and therefore should return well-organized data for it to work.
         return "resultat de predict_utility, pour l'instant rien"
@@ -741,15 +739,6 @@ class HeuristicModel(BaseModel):
                 
                 # Objective
                 self.model.setObjective(quicksum(self.sigmaxPLUS[k][j] + self.sigmaxMINUS[k][j] + self.sigmayPLUS[k][j] + self.sigmayMINUS[k][j] for j in range(self.len_clusters[k])), GRB.MINIMIZE)
-
-                # def plot_utilitary_fns(U):
-                #     import matplotlib.pyplot as plt
-                #     for k in range(self.K):
-                #         for i in range(self.n):
-                #             plt.plot([BreakPoints(i, l) for l in range(self.L+1)], [U[k, i, l] for l in range(self.L+1)])
-                #         plt.legend(["feature {}".format(i) for i in range(self.n)])
-                #         plt.show()
-
                 
                 self.model.update()
                 self.model.optimize()
@@ -765,11 +754,8 @@ class HeuristicModel(BaseModel):
                     self.sigmayMINUS[k] ={(j): self.sigmayMINUS[k][j].x for j in range(self.len_clusters[k])}
                     self.sigmaxPLUS[k] ={(j): self.sigmaxPLUS[k][j].x for j in range(self.len_clusters[k])}
                     self.sigmayPLUS[k] ={(j): self.sigmayPLUS[k][j].x for j in range(self.len_clusters[k])}
-                    # plot_utilitary_fns(self.U)
                     
         return self
-
-
 
 
     def predict_utility(self, X):
