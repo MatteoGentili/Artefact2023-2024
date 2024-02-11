@@ -186,7 +186,7 @@ class TwoClustersMIP(BaseModel):
         self.seed = 123
         self.L = n_pieces
         self.K = n_clusters
-        self.epsilon = 0.001
+        self.epsilon = 0.0001
         self.model = self.instantiate()
 
     def instantiate(self): 
@@ -200,24 +200,6 @@ class TwoClustersMIP(BaseModel):
         # Reference to the UTA University exercice 
         def BreakPoints(i, l):
             return min[i] + l * (max[i] - min[i]) / self.L
-            
-
-
-        def plot_delta(self,delta):
-            # Create a 2D array from the delta1 dictionary
-            delta1_array = np.zeros((self.K, self.P))
-            for k in range(self.K):
-                for j in range(self.P):
-                    delta1_array[k, j] = delta[(k, j)]
-            
-            # Plot the 2D array as a heatmap
-            plt.figure(figsize=(10, 6))
-            plt.imshow(delta1_array, aspect='auto')
-            plt.colorbar(label='Delta Value')
-            plt.xlabel('j')
-            plt.ylabel('k')
-            plt.title('Delta Values for each (k, j)')
-            plt.show()
 
         """Estimation of the parameters - To be completed.
 
@@ -258,9 +240,6 @@ class TwoClustersMIP(BaseModel):
         # Delta allow us to which cluster the element belongs to
         self.delta1 = {(k, j): self.model.addVar(vtype=GRB.BINARY, name="delta1_{}_{}".format(k, j))for k in range(self.K)for j in range(self.P)}
 
-
-        # Constraints
-        ## Constraint 1: Preferences with delta variable : 
         M = 2.5 # Big M
         uiKxiJ = {} # uik_xij[k, i, j] = U_k(i, X[j, i])
         for k in range(self.K):
@@ -280,8 +259,6 @@ class TwoClustersMIP(BaseModel):
                     bp1 = BreakPoints(i, l+1)
                     uiKyiJ[k, i, j] = self.U[(k, i, l)] + ((Y[j, i] - bp) / (bp1 - bp)) * (self.U[(k, i, l+1)] - self.U[(k, i, l)])
 
-        ## Constraint 2: 
-        ## Overestimation and underestimation variables
         uk_xj = {}
         for k in range(self.K):
             for j in range(self.P):
@@ -292,30 +269,23 @@ class TwoClustersMIP(BaseModel):
             for j in range(self.P):
                 uk_yj[k, j] = quicksum(uiKyiJ[k, i, j] for i in range(self.n))
 
-        ## Constraint 3:
-
-        ## Constraint 4:
-        # uk(x) > uk(y) + ϵ ⇐⇒ x ≽k y ==> x is preferred to y in cluster k
-        # => uk(x) - uk(y) + ϵ >= 0
+        ## Constraint 1:
+        ### Monotonicity of the utility function:
         self.model.addConstrs((self.U[(k, i, l+1)] - self.U[(k, i, l)]>=self.epsilon for k in range(self.K) for i in range(self.n) for l in range(self.L)))
 
-        ## Constraint 5:
-        ### MONOTONICITY:
-        self.model.addConstrs((self.U[(k, i, l+1)] - self.U[(k, i, l)]>=self.epsilon for k in range(self.K) for i in range(self.n) for l in range(self.L)))
-
-        ## Constraint 6:
+        ## Constraint 2:
         # Normalisation of the utility function
         # ui(xi0) = 0
         self.model.addConstrs((self.U[(k, i, 0)] == 0 for k in range(self.K) for i in range(self.n)))
         # Σu_i(xi) = 1
         self.model.addConstrs((quicksum(self.U[(k, i, self.L)] for i in range(self.n)) == 1 for k in range(self.K)))
 
-
-        ## Constraint 7:
+        ## Constraint 3:
         # Σδ1(k, j) >= 1 there is at least one cluster k ux > uy in this cluster
         for j in range(self.P):self.model.addConstr(quicksum(self.delta1[(k, j)] for k in range(self.K)) >= 1)
 
-        ## Constraint 8:
+        ## Constraint 4:
+        # Overestimation and underestimation variables
         # M(1 − δ) ≤ x − x0 < M.δ
         # x − x0 < M.δ ==> x − x0 <= M.δ - epsilon
         self.model.addConstrs((uk_xj[k, j] - self.sigmaxPLUS[j] + self.sigmaxMINUS[j] - (uk_yj[k, j] - self.sigmayPLUS[j] + self.sigmayMINUS[j] )<= M*self.delta1[(k,j)] - self.epsilon for j in range(self.P) for k in range(self.K)))
@@ -325,7 +295,6 @@ class TwoClustersMIP(BaseModel):
         # Objective
         self.model.setObjective(quicksum(self.sigmaxPLUS[j] + self.sigmaxMINUS[j] + self.sigmayPLUS[j] + self.sigmayMINUS[j] for j in range(self.P)), GRB.MINIMIZE)
 
-              #
         self.model.update()
         self.model.optimize()
         if self.model.status == GRB.INFEASIBLE:
@@ -338,8 +307,7 @@ class TwoClustersMIP(BaseModel):
             self.U = {(k, i, l): self.U[k, i, l].x for k in range(self.K) for i in range(self.n) for l in range(self.L+1)}
             self.delta1 = {(k, j): self.delta1[k, j].x for k in range(self.K) for j in range(self.P)}
 
-
-
+            # Plot the utility functions
             plt.figure(figsize=(10, 6))
             for k in range(self.K):
                 for i in range(self.n):
@@ -349,9 +317,6 @@ class TwoClustersMIP(BaseModel):
             plt.ylabel('Utility Value')
             plt.title('Utility Functions for each Cluster and Feature')
             plt.show()
-
-            # plot_delta(self, self.delta1)
-
         return self
 
 
