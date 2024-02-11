@@ -587,6 +587,7 @@ class HeuristicModel(BaseModel):
         self.sigmayPLUS = [0 for _ in range(n_clusters)]
         self.sigmaxMINUS = [0 for _ in range(n_clusters)]
         self.sigmayMINUS = [0 for _ in range(n_clusters)]
+        self.kmean = []
 
     def count_occurrences(self,clustering):
         # Utiliser Counter pour compter les occurrences de chaque valeur
@@ -604,11 +605,14 @@ class HeuristicModel(BaseModel):
         return counts
     
     def clustering_Kmeans(self,X,Y):
-        data =X-Y
+        #array = np.hstack((X, Y))
+        array =X-Y
+        
         kmeans = KMeans(n_clusters=self.K, random_state=42)
-        clustering = kmeans.fit_predict(data)
+        clustering = kmeans.fit_predict(array)
         self.len_clusters = self.count_occurrences(clustering)
-        return  kmeans.fit_predict(data)
+        self.kmean = clustering
+        return  kmeans.fit_predict(array)
 
     def LastIndex(self,x, i):
         return int(np.floor(self.L * (x + 0.01) / (1.01 + 0.01)))
