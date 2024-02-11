@@ -2,6 +2,8 @@ import pickle
 from abc import abstractmethod
 from gurobipy import *
 import random
+import matplotlib.pyplot as plt
+
 import numpy as np
 from sklearn.cluster import KMeans
 from collections import Counter
@@ -186,15 +188,21 @@ class TwoClustersMIP(BaseModel):
         self.seed = 123
         self.L = n_pieces
         self.K = n_clusters
-        self.epsilon = 0.001
+        self.epsilon = 0.0001
         self.model = self.instantiate()
 
     def instantiate(self): 
         
         model = Model("MIP_first_model")
         return model
- 
+        
+    
+
     def fit(self, X, Y):
+        # Reference to the UTA University exercice 
+        def BreakPoints(i, l):
+            return min[i] + l * (max[i] - min[i]) / self.L
+
         """Estimation of the parameters - To be completed.
 
         Parameters
@@ -214,9 +222,7 @@ class TwoClustersMIP(BaseModel):
         def LastIndex(x, i):
             return np.floor(self.L * (x - min[i]) / (max[i] - min[i]))
         
-        # Reference to the UTA University exercice 
-        def BreakPoints(i, l):
-                    return min[i] + l * (max[i] - min[i]) / self.L
+        
         
         # Varariables of the model
         self.U = {
@@ -236,9 +242,6 @@ class TwoClustersMIP(BaseModel):
         # Delta allow us to which cluster the element belongs to
         self.delta1 = {(k, j): self.model.addVar(vtype=GRB.BINARY, name="delta1_{}_{}".format(k, j))for k in range(self.K)for j in range(self.P)}
 
-
-        # Constraints
-        ## Constraint 1: Preferences with delta variable : 
         M = 2.5 # Big M
         uiKxiJ = {} # uik_xij[k, i, j] = U_k(i, X[j, i])
         for k in range(self.K):
@@ -258,8 +261,6 @@ class TwoClustersMIP(BaseModel):
                     bp1 = BreakPoints(i, l+1)
                     uiKyiJ[k, i, j] = self.U[(k, i, l)] + ((Y[j, i] - bp) / (bp1 - bp)) * (self.U[(k, i, l+1)] - self.U[(k, i, l)])
 
-        ## Constraint 2: 
-        ## Overestimation and underestimation variables
         uk_xj = {}
         for k in range(self.K):
             for j in range(self.P):
@@ -270,30 +271,23 @@ class TwoClustersMIP(BaseModel):
             for j in range(self.P):
                 uk_yj[k, j] = quicksum(uiKyiJ[k, i, j] for i in range(self.n))
 
-        ## Constraint 3:
-
-        ## Constraint 4:
-        # uk(x) > uk(y) + ϵ ⇐⇒ x ≽k y ==> x is preferred to y in cluster k
-        # => uk(x) - uk(y) + ϵ >= 0
+        ## Constraint 1:
+        ### Monotonicity of the utility function:
         self.model.addConstrs((self.U[(k, i, l+1)] - self.U[(k, i, l)]>=self.epsilon for k in range(self.K) for i in range(self.n) for l in range(self.L)))
 
-        ## Constraint 5:
-        ### MONOTONICITY:
-        self.model.addConstrs((self.U[(k, i, l+1)] - self.U[(k, i, l)]>=self.epsilon for k in range(self.K) for i in range(self.n) for l in range(self.L)))
-
-        ## Constraint 6:
+        ## Constraint 2:
         # Normalisation of the utility function
         # ui(xi0) = 0
         self.model.addConstrs((self.U[(k, i, 0)] == 0 for k in range(self.K) for i in range(self.n)))
         # Σu_i(xi) = 1
         self.model.addConstrs((quicksum(self.U[(k, i, self.L)] for i in range(self.n)) == 1 for k in range(self.K)))
 
-
-        ## Constraint 7:
+        ## Constraint 3:
         # Σδ1(k, j) >= 1 there is at least one cluster k ux > uy in this cluster
         for j in range(self.P):self.model.addConstr(quicksum(self.delta1[(k, j)] for k in range(self.K)) >= 1)
 
-        ## Constraint 8:
+        ## Constraint 4:
+        # Overestimation and underestimation variables
         # M(1 − δ) ≤ x − x0 < M.δ
         # x − x0 < M.δ ==> x − x0 <= M.δ - epsilon
         self.model.addConstrs((uk_xj[k, j] - self.sigmaxPLUS[j] + self.sigmaxMINUS[j] - (uk_yj[k, j] - self.sigmayPLUS[j] + self.sigmayMINUS[j] )<= M*self.delta1[(k,j)] - self.epsilon for j in range(self.P) for k in range(self.K)))
@@ -303,15 +297,6 @@ class TwoClustersMIP(BaseModel):
         # Objective
         self.model.setObjective(quicksum(self.sigmaxPLUS[j] + self.sigmaxMINUS[j] + self.sigmayPLUS[j] + self.sigmayMINUS[j] for j in range(self.P)), GRB.MINIMIZE)
 
-        # def plot_utilitary_fns(U):
-        #     import matplotlib.pyplot as plt
-        #     for k in range(self.K):
-        #         for i in range(self.n):
-        #             plt.plot([BreakPoints(i, l) for l in range(self.L+1)], [U[k, i, l] for l in range(self.L+1)])
-        #         plt.legend(["feature {}".format(i) for i in range(self.n)])
-        #         plt.show()
-
-        
         self.model.update()
         self.model.optimize()
         if self.model.status == GRB.INFEASIBLE:
@@ -324,37 +309,46 @@ class TwoClustersMIP(BaseModel):
             self.U = {(k, i, l): self.U[k, i, l].x for k in range(self.K) for i in range(self.n) for l in range(self.L+1)}
             self.delta1 = {(k, j): self.delta1[k, j].x for k in range(self.K) for j in range(self.P)}
 
-            # plot_utilitary_fns(self.U)
+            # Plot the utility functions
+            plt.figure(figsize=(10, 6))
+            for k in range(self.K):
+                for i in range(self.n):
+                    plt.plot([BreakPoints(i, l) for l in range(self.L+1)], [self.U[k, i, l] for l in range(self.L+1)], label=f'Cluster {k}, Feature {i}')
+            plt.legend()
+            plt.xlabel('Breakpoints')
+            plt.ylabel('Utility Value')
+            plt.title('Utility Functions for each Cluster and Feature')
+            plt.show()
         return self
 
+
     def predict_utility(self, X):
-            """Return Decision Function of the MIP for X. - To be completed.
 
-            Parameters:
-            -----------
-            X: np.ndarray
-                (n_samples, n_features) list of features of elements
-            """
-            # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
-            max_i = np.ones(self.n)*1.01
-            min_i = np.ones(self.n)*-0.01
+        """Return Decision Function of the MIP for X. - To be completed.
 
-            def get_last_index(x, i):
-                return int(np.floor(self.L * (x - min_i[i]) / (max_i[i] - min_i[i])))
+        Parameters:
+        -----------
+        X: np.ndarray
+            (n_samples, n_features) list of features of elements
+        """
+        max_i = np.ones(self.n)*1.01
+        min_i = np.ones(self.n)*-0.01
+
+        def get_last_index(x, i):
+            return int(np.floor(self.L * (x - min_i[i]) / (max_i[i] - min_i[i])))
 
 
-            def get_bp(i, l):
-                return min_i[i] + l * (max_i[i] - min_i[i]) / self.L
+        def get_bp(i, l):
+            return min_i[i] + l * (max_i[i] - min_i[i]) / self.L
 
-            utilities = np.zeros((X.shape[0], self.K))
-            for k in range(self.K):
-                for j in range(X.shape[0]):
-                    for i in range(self.n):
-                        l = get_last_index(X[j, i], i)
-                        utilities[j, k] += self.U[k, i, get_last_index(X[j, i], i)] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[k, i, get_last_index(X[j, i], i)+1] - self.U[k, i, get_last_index(X[j, i], i)])
-
-            return utilities
-
+        utilities = np.zeros((X.shape[0], self.K))
+        for k in range(self.K):
+            for j in range(X.shape[0]):
+                for i in range(self.n):
+                    l = get_last_index(X[j, i], i)
+                    utilities[j, k] += self.U[k, i, get_last_index(X[j, i], i)] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[k, i, get_last_index(X[j, i], i)+1] - self.U[k, i, get_last_index(X[j, i], i)])
+         
+        return utilities
 
 class Genetique(BaseModel):
     """Skeleton of MIP you have to write as the first exercise.
