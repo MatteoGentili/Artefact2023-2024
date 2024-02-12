@@ -199,10 +199,6 @@ class TwoClustersMIP(BaseModel):
     
 
     def fit(self, X, Y):
-        # Reference to the UTA University exercice 
-        def BreakPoints(i, l):
-            return min[i] + l * (max[i] - min[i]) / self.L
-
         """Estimation of the parameters - To be completed.
 
         Parameters
@@ -212,17 +208,17 @@ class TwoClustersMIP(BaseModel):
         Y: np.ndarray
             (n_samples, n_features) features of unchosen elements
         """
-        # To be completed
         self.n = X.shape[1] # Number of features/criteria
         self.P = X.shape[0] # Number of elements
-        max = np.ones(self.n)
-        min = np.zeros(self.n)
+        max = np.ones(self.n) # Max value for each feature
+        min = np.zeros(self.n) # Min value for each feature
+        M = 2.5 # Big M value
 
-
+        # Reference to the UTA University exercice 
+        def BreakPoints(i, l):
+            return min[i] + l * (max[i] - min[i]) / self.L
         def LastIndex(x, i):
             return np.floor(self.L * (x - min[i]) / (max[i] - min[i]))
-        
-        
         
         # Varariables of the model
         self.U = {
@@ -233,16 +229,6 @@ class TwoClustersMIP(BaseModel):
                 for  linearSegmentUTA in range(self.L+1) # Need to add +1 because of the last segment {Uk and UK+1}
         }
 
-        # Overestimation and underestimation variables
-        self.sigmaxPLUS = {(jX): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaxp_{}".format(jX), ub=1) for jX in range(self.P)}
-        self.sigmayPLUS = {(jY): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmayp_{}".format(jY), ub=1) for jY in range(self.P)}
-        self.sigmaxMINUS = {(jX): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaxm_{}".format(jX), ub=1) for jX in range(self.P)}
-        self.sigmayMINUS = {(jY): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaym_{}".format(jY), ub=1) for jY in range(self.P)}
-
-        # Delta allow us to which cluster the element belongs to
-        self.delta1 = {(k, j): self.model.addVar(vtype=GRB.BINARY, name="delta1_{}_{}".format(k, j))for k in range(self.K)for j in range(self.P)}
-
-        M = 2.5 # Big M
         uiKxiJ = {} # uik_xij[k, i, j] = U_k(i, X[j, i])
         for k in range(self.K):
             for i in range(self.n):
@@ -271,34 +257,56 @@ class TwoClustersMIP(BaseModel):
             for j in range(self.P):
                 uk_yj[k, j] = quicksum(uiKyiJ[k, i, j] for i in range(self.n))
 
+        # Overestimation and underestimation variables σy+, σy− and σx+, σx−
+        self.sigmaxPLUS = {(jX): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaxp_{}".format(jX), ub=1) for jX in range(self.P)}
+        self.sigmayPLUS = {(jY): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmayp_{}".format(jY), ub=1) for jY in range(self.P)}
+        self.sigmaxMINUS = {(jX): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaxm_{}".format(jX), ub=1) for jX in range(self.P)}
+        self.sigmayMINUS = {(jY): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaym_{}".format(jY), ub=1) for jY in range(self.P)}
+
+        # Delta(δ) allow us to which cluster the element belongs to
+        self.delta = {(k, j): self.model.addVar(vtype=GRB.BINARY, name="delta{}_{}".format(k, j))for k in range(self.K)for j in range(self.P)}
+
+
+        ##########################
+        ###### Constraints #######
+        ##########################
+
         ## Constraint 1:
         ### Monotonicity of the utility function:
         self.model.addConstrs((self.U[(k, i, l+1)] - self.U[(k, i, l)]>=self.epsilon for k in range(self.K) for i in range(self.n) for l in range(self.L)))
 
         ## Constraint 2:
-        # Normalisation of the utility function
+        ### Normalisation of the utility function
         # ui(xi0) = 0
         self.model.addConstrs((self.U[(k, i, 0)] == 0 for k in range(self.K) for i in range(self.n)))
         # Σu_i(xi) = 1
         self.model.addConstrs((quicksum(self.U[(k, i, self.L)] for i in range(self.n)) == 1 for k in range(self.K)))
 
         ## Constraint 3:
-        # Σδ1(k, j) >= 1 there is at least one cluster k ux > uy in this cluster
-        for j in range(self.P):self.model.addConstr(quicksum(self.delta1[(k, j)] for k in range(self.K)) >= 1)
+        ### There is at least one cluster k ux > uy in this cluster
+        # Σδ1(k, j) >= 1 
+        for j in range(self.P):self.model.addConstr(quicksum(self.delta[(k, j)] for k in range(self.K)) >= 1)
 
         ## Constraint 4:
-        # Overestimation and underestimation variables
+        ### Overestimation and underestimation variables
         # M(1 − δ) ≤ x − x0 < M.δ
         # x − x0 < M.δ ==> x − x0 <= M.δ - epsilon
-        self.model.addConstrs((uk_xj[k, j] - self.sigmaxPLUS[j] + self.sigmaxMINUS[j] - (uk_yj[k, j] - self.sigmayPLUS[j] + self.sigmayMINUS[j] )<= M*self.delta1[(k,j)] - self.epsilon for j in range(self.P) for k in range(self.K)))
+        self.model.addConstrs((uk_xj[k, j] - self.sigmaxPLUS[j] + self.sigmaxMINUS[j] - (uk_yj[k, j] - self.sigmayPLUS[j] + self.sigmayMINUS[j] )<= M*self.delta[(k,j)] - self.epsilon for j in range(self.P) for k in range(self.K)))
         #  M(1 − δ) ≤ x − x0 ==> x − x0 >= -M(1 − δ) 
-        self.model.addConstrs((uk_xj[k, j] - self.sigmaxPLUS[j] + self.sigmaxMINUS[j] - uk_yj[k, j] + self.sigmayPLUS[j] - self.sigmayMINUS[j] >= -M*(1-self.delta1[(k,j)]) for j in range(self.P) for k in range(self.K)))
-
-        # Objective
+        self.model.addConstrs((uk_xj[k, j] - self.sigmaxPLUS[j] + self.sigmaxMINUS[j] - uk_yj[k, j] + self.sigmayPLUS[j] - self.sigmayMINUS[j] >= -M*(1-self.delta[(k,j)]) for j in range(self.P) for k in range(self.K)))
+        
+        ##########################
+        ###### Objective #########
+        ##########################
         self.model.setObjective(quicksum(self.sigmaxPLUS[j] + self.sigmaxMINUS[j] + self.sigmayPLUS[j] + self.sigmayMINUS[j] for j in range(self.P)), GRB.MINIMIZE)
+
+
 
         self.model.update()
         self.model.optimize()
+        ########################################
+        ########## Model evaluation ############
+        ########################################
         if self.model.status == GRB.INFEASIBLE:
             raise Exception("Infeasible")
         elif self.model.status == GRB.UNBOUNDED:
@@ -307,8 +315,9 @@ class TwoClustersMIP(BaseModel):
             
             print("objective function value: ", self.model.objVal)
             self.U = {(k, i, l): self.U[k, i, l].x for k in range(self.K) for i in range(self.n) for l in range(self.L+1)}
-            self.delta1 = {(k, j): self.delta1[k, j].x for k in range(self.K) for j in range(self.P)}
-
+            self.delta = {(k, j): self.delta[k, j].x for k in range(self.K) for j in range(self.P)}
+            
+            # Plot the utility functions
             for k in range(self.K):
                 plt.figure(figsize=(5, 3))
                 for i in range(self.n):
@@ -318,6 +327,7 @@ class TwoClustersMIP(BaseModel):
                 plt.ylabel('Utility Value')
                 plt.title(f'Utility Functions for Cluster {k}')
                 plt.show()
+
         return self
 
 
@@ -333,19 +343,17 @@ class TwoClustersMIP(BaseModel):
         max_i = np.ones(self.n)*1.01
         min_i = np.ones(self.n)*-0.01
 
-        def get_last_index(x, i):
-            return int(np.floor(self.L * (x - min_i[i]) / (max_i[i] - min_i[i])))
-
-
-        def get_bp(i, l):
-            return min_i[i] + l * (max_i[i] - min_i[i]) / self.L
+         # Reference to the UTA University exercice 
+        def BreakPoints(i, l):
+            return min[i] + l * (max[i] - min[i]) / self.L
+        def LastIndex(x, i):
+            return np.floor(self.L * (x - min[i]) / (max[i] - min[i]))
 
         utilities = np.zeros((X.shape[0], self.K))
         for k in range(self.K):
             for j in range(X.shape[0]):
                 for i in range(self.n):
-                    l = get_last_index(X[j, i], i)
-                    utilities[j, k] += self.U[k, i, get_last_index(X[j, i], i)] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[k, i, get_last_index(X[j, i], i)+1] - self.U[k, i, get_last_index(X[j, i], i)])
+                    utilities[j, k] += self.U[k, i, LastIndex(X[j, i], i)] + ((X[j, i] - BreakPoints(i, LastIndex(X[j, i], i))) / (BreakPoints(i, LastIndex(X[j, i], i)+1) - BreakPoints(i, LastIndex(X[j, i], i)))) * (self.U[k, i, LastIndex(X[j, i], i)+1] - self.U[k, i, LastIndex(X[j, i], i)])
          
         return utilities
 
@@ -364,7 +372,7 @@ class Genetique(BaseModel):
         self.epsilon = 0.001
         self.population_size = population_size
         self.generations = generations
-        self.population = []  # List to store individuals
+        self.population = [] 
         self.model = self.instantiate()
         self.models = self.instantiate()
         self.best_individual = None
@@ -431,7 +439,6 @@ class Genetique(BaseModel):
         """Evaluate the fitness of each individual in the population."""
         fitness_scores = []
         for individual in self.population:
-            # To be completed based on your evaluation criteria
             fitness = self.evaluate_individual(individual, X, Y)
             fitness_scores.append(fitness)
         return np.array(fitness_scores)
@@ -459,7 +466,6 @@ class Genetique(BaseModel):
 
         scoreTotalIndiv = np.sum(score)/len(X)
 
-        # To be completed based on your evaluation criteria
         return scoreTotalIndiv
 
     def selection(self, X, Y):
@@ -537,7 +543,6 @@ class Genetique(BaseModel):
             individual[random_index][random_l] = random_value
 
         mutated_individual = individual
-        # To be completed (implement mutation operation)
         return mutated_individual
     
 
@@ -554,9 +559,8 @@ class Genetique(BaseModel):
         np.ndarray:
             (n_samples, n_clusters) array of decision function value for each cluster.
         """
-        # To be completed
-        # Do not forget that this method is called in predict_preference (line 42) and therefore should return well-organized data for it to work.
-        return "resultat de predict_utility, pour l'instant rien"
+
+        return
 
 class HeuristicModel(BaseModel):
     """Skeleton of MIP you have to write as the first exercise.
@@ -674,7 +678,7 @@ class HeuristicModel(BaseModel):
                 clusters = self.clustering_Kmeans(Ux,Uy)
                 self.iteration +=1
 
-            #on se place dans le cluster k:
+            # We place ourselves in the cluster k
             for k in range(self.K):
                 self.U[k] = {
                     (criteria, linearSegmentUTA): self.model.addVar(
@@ -683,13 +687,14 @@ class HeuristicModel(BaseModel):
                         for  linearSegmentUTA in range(self.L+1) # Need to add +1 because of the last segment {Uk and UK+1}
                 }
 
-                # Overestimation and underestimation variables
+                # Overestimation and underestimation variables σy+, σy− and σx+, σx−
                 self.sigmaxPLUS[k] = {(jX): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaxp_{}".format(jX), ub=1) for jX in range(self.len_clusters[k])}
                 self.sigmayPLUS[k] = {(jY): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmayp_{}".format(jY), ub=1) for jY in range(self.len_clusters[k])}
                 self.sigmaxMINUS[k] = {(jX): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaxm_{}".format(jX), ub=1) for jX in range(self.len_clusters[k])}
                 self.sigmayMINUS[k] = {(jY): self.model.addVar(vtype=GRB.CONTINUOUS, lb=0, name="sigmaym_{}".format(jY), ub=1) for jY in range(self.len_clusters[k])}
-                # Constraints
-                
+
+
+                                     
                 uixiJ = {} # uik_xij[i, j] = U_k(i, X[j, i])
                 for i in range(self.n):
                     j=0
@@ -719,6 +724,9 @@ class HeuristicModel(BaseModel):
                 for j in range(self.len_clusters[k]):
                     u_yj[j] = quicksum(uiyiJ[i, j] for i in range(self.n))
 
+                #########################
+                ###### Constraints #######
+                ##########################      
 
                 for j in range(self.len_clusters[k]):
                     self.model.addConstr((u_xj[j] - self.sigmaxPLUS[k][j] + self.sigmaxMINUS[k][j] - u_yj[j] + self.sigmayPLUS[k][j] - self.sigmayMINUS[k][j] >=self.epsilon))
@@ -734,7 +742,10 @@ class HeuristicModel(BaseModel):
                 # Σu_i(xi) = 1
                 self.model.addConstr((quicksum(self.U[k][(i, self.L)] for i in range(self.n)) == 1 ))
                 
-                # Objective
+
+                ##########################
+                ###### Objective #########
+                ##########################
                 self.model.setObjective(quicksum(self.sigmaxPLUS[k][j] + self.sigmaxMINUS[k][j] + self.sigmayPLUS[k][j] + self.sigmayMINUS[k][j] for j in range(self.len_clusters[k])), GRB.MINIMIZE)
                 
                 self.model.update()
@@ -775,21 +786,18 @@ class HeuristicModel(BaseModel):
             X: np.ndarray
                 (n_samples, n_features) list of features of elements
             """
-            # Do not forget that this method is called in predict_preference (line 42) and therefor should return well-organized data for it to work.
             max_i = np.ones(self.n)*1.01
             min_i = np.ones(self.n)*-0.01
 
-            def get_last_index(x, i):
-                return int(np.floor(self.L * (x - min_i[i]) / (max_i[i] - min_i[i])))
-
-
-            def get_bp(i, l):
-                return min_i[i] + l * (max_i[i] - min_i[i]) / self.L
-
+            def BreakPoints(i, l):
+                return min[i] + l * (max[i] - min[i]) / self.L
+            def LastIndex(x, i):
+                return np.floor(self.L * (x - min[i]) / (max[i] - min[i]))
+            
             utilities = np.zeros((X.shape[0], self.K))
             for k in range(self.K):
                 for j in range(X.shape[0]):
                     for i in range(self.n):
-                        utilities[j, k] += self.U[k][i, get_last_index(X[j, i], i)] + ((X[j, i] - get_bp(i, get_last_index(X[j, i], i))) / (get_bp(i, get_last_index(X[j, i], i)+1) - get_bp(i, get_last_index(X[j, i], i)))) * (self.U[k][i, get_last_index(X[j, i], i)+1] - self.U[k][i, get_last_index(X[j, i], i)])
+                        utilities[j, k] += self.U[k][i, LastIndex(X[j, i], i)] + ((X[j, i] - BreakPoints(i, LastIndex(X[j, i], i))) / (BreakPoints(i, LastIndex(X[j, i], i)+1) - BreakPoints(i, LastIndex(X[j, i], i)))) * (self.U[k][i, LastIndex(X[j, i], i)+1] - self.U[k][i, LastIndex(X[j, i], i)])
 
             return utilities
