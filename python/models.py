@@ -344,10 +344,11 @@ class TwoClustersMIP(BaseModel):
         min_i = np.ones(self.n)*-0.01
 
          # Reference to the UTA University exercice 
-        def BreakPoints(i, l):
-            return min[i] + l * (max[i] - min[i]) / self.L
         def LastIndex(x, i):
-            return np.floor(self.L * (x - min[i]) / (max[i] - min[i]))
+                return int(np.floor(self.L * (x - min_i[i]) / (max_i[i] - min_i[i])))
+
+        def BreakPoints(i, l):
+            return min_i[i] + l * (max_i[i] - min_i[i])/self.L
 
         utilities = np.zeros((X.shape[0], self.K))
         for k in range(self.K):
@@ -789,10 +790,11 @@ class HeuristicModel(BaseModel):
             max_i = np.ones(self.n)*1.01
             min_i = np.ones(self.n)*-0.01
 
-            def BreakPoints(i, l):
-                return min[i] + l * (max[i] - min[i]) / self.L
             def LastIndex(x, i):
-                return np.floor(self.L * (x - min[i]) / (max[i] - min[i]))
+                return int(np.floor(self.L * (x - min_i[i]) / (max_i[i] - min_i[i])))
+
+            def BreakPoints(i, l):
+                return min_i[i] + l * (max_i[i] - min_i[i])/self.L
             
             utilities = np.zeros((X.shape[0], self.K))
             for k in range(self.K):
